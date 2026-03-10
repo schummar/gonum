@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"gonum.org/v1/gonum/graph"
 	"gonum.org/v1/gonum/graph/path"
@@ -629,6 +630,81 @@ func TestDStarLiteDynamic(t *testing.T) {
 				t.Logf("Test %d:\n%s", i, buf.String())
 			}
 		}
+	}
+}
+
+func TestMoveToAway(t *testing.T) {
+	t.Parallel()
+
+	g := simple.NewWeightedDirectedGraph(0, math.Inf(1))
+	p0 := simple.Node(0)
+	p1 := simple.Node(1)
+	p2 := simple.Node(2)
+	g.SetWeightedEdge(simple.WeightedEdge{F: p0, T: p1, W: 1})
+	g.SetWeightedEdge(simple.WeightedEdge{F: p1, T: p2, W: 1})
+
+	d := NewDStarLite(p1, p2, g, path.NullHeuristic, simple.NewWeightedDirectedGraph(0, math.Inf(1)))
+	_, _ = d.Path()
+
+	d.MoveTo(p0)
+	p, w := d.Path()
+
+	if w != 2 {
+		t.Errorf("unexpected weight from move to away: got:%f want:2", w)
+	}
+	want := []graph.Node{p0, p1, p2}
+	if !samePath(p, want) {
+		t.Fatalf("unexpected path from move to away: got:%v want:%v", p, want)
+	}
+}
+
+func TestStartEqualsGoal(t *testing.T) {
+	t.Parallel()
+
+	g := simple.NewWeightedDirectedGraph(0, math.Inf(1))
+	p0 := simple.Node(0)
+	p1 := simple.Node(1)
+	p2 := simple.Node(2)
+	for _, n := range []graph.Node{p0, p1, p2} {
+		for _, m := range []graph.Node{p0, p1, p2} {
+			if n.ID() != m.ID() {
+				g.SetWeightedEdge(simple.WeightedEdge{F: n, T: m, W: 1})
+			}
+		}
+	}
+
+	d := NewDStarLite(p2, p2, g, path.NullHeuristic, simple.NewWeightedDirectedGraph(0, math.Inf(1)))
+	p, w := d.Path()
+
+	if w != 0 {
+		t.Errorf("unexpected weight from start equal to goal: got:%f want:0", w)
+	}
+	want := []graph.Node{p2}
+	if !samePath(p, want) {
+		t.Fatalf("unexpected path from start equal to goal: got:%v want:%v", p, want)
+	}
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		d.MoveTo(p0)
+		p, weight := d.Path()
+
+		if weight != 1.0 {
+			t.Errorf("unexpected weight from start equal to goal: got:%f want:1", weight)
+		}
+		want = []graph.Node{p0, p2}
+		if !samePath(p, want) {
+			t.Fatalf("unexpected path from start equal to goal: got:%v want:%v", p, want)
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(1 * time.Second):
+		t.Fatal("unexpected timeout from start equal to goal")
 	}
 }
 
